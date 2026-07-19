@@ -481,13 +481,14 @@
     <div class="card ctl">
       <h3>Model &nbsp;·&nbsp; f(x) = −e<sup>b·x</sup></h3>
       <div class="mdef">The 1-D landscape trained with preconditioned GD: x ← x − η·P·∇L.
-      <b>signed GD</b>: P = 1/|g| → constant step size η. <b>spectral GD</b>: P from
+      <b>plain GD</b>: P = I — the baseline; every chart reduces to the ordinary quantities. <b>signed GD</b>: P = 1/|g| → constant step size η. <b>spectral GD</b>: P from
       kron((GGᵀ)<sup>−¼</sup>, (GᵀG)<sup>−¼</sup>) per layer — in 1-D both reduce to sign(g), so
       signed ≡ spectral here. <b>Gauss–Newton</b>: P = (JJᵀ)⁻¹ = 1/f′² (damped) — then PH ≈ 2 always
       and the threshold is η = 1 independent of the landscape.
       <b>b</b>: curvature growth · <b>y</b>: target · <b>x₀</b>: start · <b>η</b>, <b>T</b>: optimizer.</div>
       <div class="row"><label for="p5opt">optimizer</label>
         <select id="p5opt">
+          <option value="gd">plain GD (P = I)</option>
           <option value="spec">spectral GD</option>
           <option value="sign">signed GD</option>
           <option value="gn">Gauss–Newton</option>
@@ -615,12 +616,13 @@
     <div class="card ctl">
       <h3>Model &nbsp;·&nbsp; f₁ = a·e<sup>b·s</sup>·w₁, &nbsp;f₂ = μ·s</h3>
       <div class="mdef">The tilted-valley model trained with preconditioned GD: w ← w − η·P·∇L.
-      <b>signed GD</b>: P = diag(1/|gᵢ|). <b>spectral GD</b>: P = kron((GGᵀ)<sup>−¼</sup>, (GᵀG)<sup>−¼</sup>)
+      <b>plain GD</b>: P = I — the θ-lab baseline, for side-by-side comparison. <b>signed GD</b>: P = diag(1/|gᵢ|). <b>spectral GD</b>: P = kron((GGᵀ)<sup>−¼</sup>, (GᵀG)<sup>−¼</sup>)
       per layer — for the single vector "layer" here this reduces to g → g/‖g‖ (Muon-style
       orthogonalization). <b>Gauss–Newton</b>: P = (JJᵀ)⁻¹ in parameter space (our row convention:
       (JᵀJ + εI)⁻¹, ε ≈ 1e−9). Stability: λ<sub>max</sub>(PH) &lt; 2/η. Model knobs as on the θ-lab tab.</div>
       <div class="row"><label for="p6opt">optimizer</label>
         <select id="p6opt">
+          <option value="gd">plain GD (P = I)</option>
           <option value="spec">spectral GD</option>
           <option value="sign">signed GD</option>
           <option value="gn">Gauss–Newton</option>
@@ -2051,6 +2053,7 @@ function S5(x){
   return 2*P5.b*P5.b*E*E + 2*(-E - P5.y)*(-P5.b*P5.b*E);
 }
 function pre5(x){
+  if (P5.opt === 'gd') return 1;
   const fp = fp5(x);
   if (P5.opt === 'gn') return 1/(fp*fp + 1e-9);
   const g = 2*(fv5(x) - P5.y)*fp;
@@ -2247,6 +2250,8 @@ function hess6(x1, x2){
 }
 function pre6(H){
   const mu = P6.mu;
+  if (P6.opt === 'gd')
+    return { p11: 1, p12: 0, p22: 1 };
   if (P6.opt === 'sign')
     return { p11: 1/(Math.abs(H.g1) + 1e-12), p12: 0, p22: 1/(Math.abs(H.g2) + 1e-12) };
   if (P6.opt === 'gn'){
@@ -2530,6 +2535,7 @@ function drawAll5(){
     `<span class="pill" style="background:${st5.cls}">η·λ(PH)/2 = ${fmt(st5.ratio)} · ${st5.txt}</span>`;
   let info = chip('2/η', fmt(2/P5.lr));
   if (P5.opt === 'gn') info += `<span class="chip">GN: λ(PH) ≈ 2 ⇒ threshold <b>η = 1</b></span>`;
+  else if (P5.opt === 'gd') info += `<span class="chip">plain GD: P = I — λ(PH) = S, the ordinary edge of stability</span>`;
   else info += `<span class="chip">constant-step method: loss floor ∝ η²</span>`;
   if (R5.div) info += `<span class="chip" style="color:${PAL.crit}"><b>diverged at t=${R5.n}</b></span>`;
   else if (R5.conv) info += `<span class="chip" style="color:${PAL.good}"><b>converged</b></span>`;
@@ -2548,6 +2554,7 @@ function drawAll6(){
     `<span class="pill" style="background:${st6.cls}">η·λ(PH)/2 = ${fmt(st6.ratio)} · ${st6.txt}</span>`;
   let info = chip('2/η', fmt(2/P6.lr)) + chip('full-fit s = y₂/μ', fmt(P6.y2/(P6.mu || 1e-12)));
   if (P6.opt === 'gn') info += `<span class="chip">GN: λ(PH) ≈ 2 ⇒ threshold <b>η = 1</b>, any sharpness</span>`;
+  else if (P6.opt === 'gd') info += `<span class="chip">plain GD: P = I — this is exactly the θ-lab dynamics</span>`;
   if (R6.div) info += `<span class="chip" style="color:${PAL.crit}"><b>diverged at t=${R6.n}</b></span>`;
   else if (R6.conv) info += `<span class="chip" style="color:${PAL.good}"><b>converged</b></span>`;
   $('p6info').innerHTML = info;
@@ -2597,13 +2604,19 @@ function wireAdaptive(binds, PP, pid, recompute_){
   });
   $(pid + 'opt').addEventListener('change', () => {
     const v = $(pid + 'opt').value;
-    PP.opt = (v === 'sign' || v === 'gn') ? v : 'spec';
+    PP.opt = (v === 'sign' || v === 'gn' || v === 'gd') ? v : 'spec';
     recompute_(true);
   });
 }
 wireAdaptive(BIND5, P5, 'p5', recompute5);
 wireAdaptive(BIND6, P6, 'p6', recompute6);
 const PRESETS5 = [
+  { n:'Ride forever · plain GD', d:'η=0.115: the ordinary edge of stability — S hugs 2/η = 17.4 and the bounded oscillation never ends (tail L ≈ 0.07–0.1 out to t=3000)',
+    v:{ opt:'gd', b:1, y:-3, x0:-2, lr:0.115, T:3000 } },
+  { n:'Ride forever · signed/spectral', d:'η=0.2: constant steps ⇒ every single tail step reverses direction; λ(PH) locks its median at ≈ 2/η = 10 and the cycle persists indefinitely',
+    v:{ opt:'sign', b:1, y:-3, x0:-2, lr:0.2, T:3000 } },
+  { n:'Ride forever · Gauss–Newton', d:'η=1.02: just past GN’s landscape-independent threshold η = 1 — a bounded oscillation with L ≈ 0.34–0.9 that persists to t=3000',
+    v:{ opt:'gn', b:1, y:-3, x0:-2, lr:1.02, T:3000 } },
   { n:'Default · signed GD locks its own edge', d:'η=0.2: constant steps ⇒ a limit cycle around the crossing; median λ(PH) = 10.01 vs 2/η = 10 — the preconditioned sharpness self-tunes onto the threshold',
     v:{ opt:'sign', b:1, y:-3, x0:-2, lr:0.2, T:600 } },
   { n:'Signed · tighter cycle (η ↓)', d:'η=0.05: the cycle shrinks (loss floor ∝ η²) but never converges; λ(PH) spikes as |g| → 0 at the turning points',
@@ -2614,6 +2627,14 @@ const PRESETS5 = [
     v:{ opt:'gn', b:1, y:-3, x0:-2, lr:1.02, T:800 } },
 ];
 const PRESETS6 = [
+  { n:'Big locked ride · plain GD', d:'η=0.1: the θ-lab default reproduced — permanent period-2 oscillation (every tail step flips w₁), λ pinned at 2/η = 20, loss plateaued at L ≈ 3.89 forever',
+    v:{ opt:'gd', th:90, a:2.5, b:0.05, mu:0.3, y2:2.0, x10:0.15, lr:0.1, T:3000 } },
+  { n:'Big locked ride · spectral GD', d:'η=0.1: λ(PH) = 20.00 = 2/η exactly, every tail step flips w₁ — same permanent ride, but at L ≈ 3.0e−2 instead of GD’s 3.89 ceiling',
+    v:{ opt:'spec', th:90, a:2.5, b:0.05, mu:0.3, y2:2.0, x10:0.15, lr:0.1, T:3000 } },
+  { n:'Big locked ride · signed GD', d:'η=0.02: permanent per-coordinate limit cycle at L ≈ 1.2e−3; λ̄(PH) ≈ 133 hovers above 2/η = 100 through the spiky turning points',
+    v:{ opt:'sign', th:90, a:2.5, b:0.05, mu:0.3, y2:2.0, x10:0.15, lr:0.02, T:3000 } },
+  { n:'Locked out, not locked in · GN catapult cycle', d:'η=1.02: GN has no gentle ride — λ(PH) ≈ 2 everywhere means η < 1 converges and η > 1 recurrently catapults, L swinging between ~1e3 and ~1e21 without ever settling or diverging',
+    v:{ opt:'gn', th:90, a:2.5, b:0.05, mu:0.3, y2:2.0, x10:0.15, lr:1.02, T:3000 } },
   { n:'Default · spectral GD rides its own edge', d:'η=0.1: λ(PH) = ‖H‖/‖g‖ locks exactly at 2/η = 20 while the loss keeps falling to ~3e−2 near the full fit — the ceiling that trapped GD is gone',
     v:{ opt:'spec', th:90, a:2.5, b:0.05, mu:0.3, y2:2.0, x10:0.15, lr:0.1, T:2000 } },
   { n:'Signed GD · per-coordinate lock', d:'η=0.02: reaches L ≈ 1.2e−3 at s ≈ 6.66 (full fit 6.67); λ̄(PH) ≈ 133 hovers above 2/η = 100 through the spiky turning points',
