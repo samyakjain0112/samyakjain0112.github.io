@@ -557,7 +557,7 @@
       <canvas class="plot" id="c5s2" role="img" aria-label="preconditioned sharpness versus step with threshold"></canvas>
       <div class="legend">
         <span><i class="sw" style="background:var(--sharp)"></i>λ<sub>max</sub>(PH) at iterate</span>
-        <span><i class="sw" style="background:var(--sharpmid)"></i>at midpoint</span>
+        <span><i class="sw" style="background:var(--sharpmid)"></i>at midpoint (P frozen at iterate)</span>
         <span><i class="sw" style="background:var(--unst)"></i>2/η</span>
       </div>
     </div>
@@ -695,7 +695,7 @@
       <canvas class="plot" id="c6s2" role="img" aria-label="preconditioned sharpness versus step with threshold"></canvas>
       <div class="legend">
         <span><i class="sw" style="background:var(--sharp)"></i>λ<sub>max</sub>(PH) at iterate</span>
-        <span><i class="sw" style="background:var(--sharpmid)"></i>at midpoint</span>
+        <span><i class="sw" style="background:var(--sharpmid)"></i>at midpoint (P frozen at iterate)</span>
         <span><i class="sw" style="background:var(--unst)"></i>2/η</span>
       </div>
     </div>
@@ -1143,10 +1143,15 @@ function lineSeries(ctx, A, arr, len, st, off, color, upTo){
   for (let i = 0; i < Math.min(upTo, len); i += st){ const px = A.x(i+off), py = A.y(arr[i]); first ? ctx.moveTo(px,py) : ctx.lineTo(px,py); first = false; }
   ctx.stroke();
 }
-function drawSharpStrip(cv, RR, t, lr){
+function drawSharpStrip(cv, RR, t, lr, iterRange){
   const F = stripFrame(cv, t, RR.n), ctx = F.ctx, A = F.A;
   const thr = 2/lr;
-  let lo = Math.min(pctl(RR.S,2), pctl(RR.Sm,2), thr, 0), hi = Math.max(pctl(RR.S,98), pctl(RR.Sm,98), thr);
+  // iterRange: scale the axis from the iterate series only — preconditioned midpoint
+  // values can spike (near-vanishing hop gradients) and would flatten the whole chart
+  let lo = iterRange ? Math.min(pctl(RR.S,2), thr, 0)
+                     : Math.min(pctl(RR.S,2), pctl(RR.Sm,2), thr, 0);
+  let hi = iterRange ? Math.max(pctl(RR.S,98), thr)
+                     : Math.max(pctl(RR.S,98), pctl(RR.Sm,98), thr);
   if (!(hi > lo)){ lo -= 1; hi += 1; }
   const pad = 0.10*(hi-lo); lo -= pad; hi += pad;
   A.y = v => A.t + (hi - clamp(v, lo, hi))/(hi - lo)*A.h;
@@ -2092,7 +2097,9 @@ function sim5(){
     Ruv[i] = clip(r[i]*(fp*Pv*UPHI5 > 0 ? 1 : fp*Pv*UPHI5 < 0 ? -1 : 0));
   }
   const Sm = new Float64Array(Math.max(0, m-1));
-  for (let i = 0; i+1 < m; i++) Sm[i] = clip(lamP5(0.5*(xs[i]+xs[i+1])));
+  // midpoint curvature with P frozen at the iterate — recomputing P at the midpoint
+  // blows up where the hop's gradient nearly vanishes
+  for (let i = 0; i+1 < m; i++) Sm[i] = clip(pre5(xs[i]) * S5(0.5*(xs[i]+xs[i+1])));
   return { xs: xs.subarray(0,m), r, L, rn, S, Sm, Xt, GdS, Ru, Rq, Ruv, n, div,
            conv: !div && L[m-1] < 1e-10 };
 }
@@ -2327,7 +2334,17 @@ function sim6(){
     Ruv[i] = nr > 1e-300 ? clip((-H.f1*jr1 + H.r2*jr2)/nr) : 0;
   }
   const Sm = new Float64Array(Math.max(0, m-1));
-  for (let i = 0; i+1 < m; i++) Sm[i] = clip(lamP6(0.5*(X1[i]+X1[i+1]), 0.5*(X2[i]+X2[i+1])));
+  // midpoint curvature with P frozen at the iterate — recomputing P at the midpoint
+  // blows up where the hop's gradient nearly vanishes
+  for (let i = 0; i+1 < m; i++){
+    const Hm = hess6(0.5*(X1[i]+X1[i+1]), 0.5*(X2[i]+X2[i+1]));
+    const Pi = pre6(hess6(X1[i], X2[i]));
+    const Qi = symSqrt2(Pi.p11, Pi.p12, Pi.p22);
+    const c11 = Qi.q11*Hm.h11 + Qi.q12*Hm.h12, c12 = Qi.q11*Hm.h12 + Qi.q12*Hm.h22;
+    const c21 = Qi.q12*Hm.h11 + Qi.q22*Hm.h12, c22 = Qi.q12*Hm.h12 + Qi.q22*Hm.h22;
+    Sm[i] = clip(symEig2(c11*Qi.q11 + c12*Qi.q12, c11*Qi.q12 + c12*Qi.q22,
+                         c21*Qi.q12 + c22*Qi.q22).lam);
+  }
   return { x1: X1.subarray(0,m), x2: X2.subarray(0,m), L, rn, S, Sm, Xt, GdS, Ru, Rq, Ruv, n, div,
            conv: !div && L[m-1] < 1e-10 };
 }
@@ -2504,7 +2521,7 @@ function drawSurf6(cv, kind){
 /* ---------- panels 5/6 drawing + wiring ---------- */
 function drawAdaptive(px, RR, t, lr){
   drawLogStrip($(px + 's1'), RR, t, RR.L, 0, PAL.accent);
-  drawSharpStrip($(px + 's2'), RR, t, lr);
+  drawSharpStrip($(px + 's2'), RR, t, lr, true);
   drawLogStrip($(px + 's3'), RR, t, RR.rn, 0, PAL.accent);
   drawSymlogStrip($(px + 's4'), RR, t, RR.Xt, PAL.sharp);
   drawSymlogStrip($(px + 's5'), RR, t, RR.GdS, PAL.now);
