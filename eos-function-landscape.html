@@ -104,6 +104,8 @@
   #chero,#clhero{height:340px}
   #cs1,#cs2,#cs3,#cs4,#cs5,#cs6,#cs7,#cs8,#c3s1,#c3s2,#c3s3,#c3s4,#c3s5,#c3s6,#c3s7,#c3s8,#c5s1,#c5s2,#c5s3,#c5s4,#c5s5,#c5s6,#c5s7,#c5s8,#c6s1,#c6s2,#c6s3,#c6s4,#c6s5,#c6s6,#c6s7,#c6s8{height:172px}
   #c3f,#c3L{height:380px}
+  #c5f,#c5L{height:340px}
+  #c6f,#c6L{height:380px}
   .legend{display:flex; flex-wrap:wrap; gap:11px; margin-top:8px; font-size:11.5px; color:var(--ink2)}
   .legend span{display:inline-flex; align-items:center; gap:5px}
   .legend .tg{cursor:pointer; user-select:none; border-radius:5px; padding:1px 4px}
@@ -522,6 +524,26 @@
       </select>
     </div>
 
+
+    <div class="card">
+      <h3>Function landscape f(x)</h3>
+      <p class="cap">f(x) = −e<sup>b·x</sup> · dashed line: target y · red band: λ<sub>max</sub>(PH) &gt; 2/η for the <i>selected preconditioner</i></p>
+      <canvas class="plot" id="c5f" role="img" aria-label="1-D function landscape with preconditioned GD hops as arcs"></canvas>
+      <div class="legend">
+        <span><i class="sw dash" style="color:var(--zero)"></i>target y</span>
+        <span><i class="sw dot" style="background:var(--zero)"></i>crossing f = y</span>
+        <span><i class="sw area" style="background:color-mix(in srgb,var(--unst) 14%, transparent)"></i>λ<sub>max</sub>(PH) &gt; 2/η</span>
+        <span><i class="sw" style="background:linear-gradient(90deg,var(--traj0),var(--traj1))"></i>hops t = 0 → T</span>
+        <span><i class="sw dot" style="background:var(--now)"></i>current</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Loss landscape L(x) = (y − f)²</h3>
+      <p class="cap">same trajectory on the loss curve · with a constant-step method (signed/spectral) the unstable band hugs the crossing — the geometric reason it can never converge; Gauss–Newton flattens λ(PH) → 2 along the whole descent path (for η &lt; 1 the band retreats beyond the crossing, where the residual curvature term takes over)</p>
+      <canvas class="plot" id="c5L" role="img" aria-label="1-D loss landscape with the same preconditioned GD hops"></canvas>
+    </div>
+
     <div class="card">
       <h3>Training loss</h3>
       <p class="cap">L · log scale</p>
@@ -636,6 +658,27 @@
         <option value="0.25">¼×</option><option value="1" selected>1×</option>
         <option value="4">4×</option><option value="16">16×</option>
       </select>
+    </div>
+
+
+    <div class="card">
+      <h3>f₁ landscape — the oscillating output</h3>
+      <p class="cap">surface z = f₁ = a·e<sup>b·s</sup>·w₁ · green: r₁ = 0 valley · amber: full fit (r₁ = r₂ = 0) · drag to rotate</p>
+      <canvas class="plot" id="c6f" role="img" aria-label="f1 landscape with the preconditioned optimizer trajectory"></canvas>
+      <div class="legend">
+        <span><i class="sw" style="background:var(--zero)"></i>r₁ = 0 valley</span>
+        <span><i class="sw dot" style="background:var(--nt3)"></i>full fit (r = 0)</span>
+        <span><i class="sw area" style="background:color-mix(in srgb,var(--unst) 14%, transparent)"></i>λ<sub>max</sub>(PH) &gt; 2/η</span>
+        <span><i class="sw" style="background:linear-gradient(90deg,var(--traj0),var(--traj1))"></i>iterates t = 0 → T</span>
+        <span><i class="sw dot" style="background:var(--now)"></i>current</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="hd"><h3>Loss landscape L(w₁, w₂)</h3>
+        <label class="toggle"><input type="checkbox" id="p6logz" checked> log z</label></div>
+      <p class="cap">surface z = L = f₁² + (y₂ − μs)² · red tint: λ<sub>max</sub>(PH) &gt; 2/η for the <i>selected preconditioner</i> — switch optimizers and watch the unstable region move · drag to rotate</p>
+      <canvas class="plot" id="c6L" role="img" aria-label="loss landscape with the preconditioned optimizer trajectory"></canvas>
     </div>
 
     <div class="card">
@@ -2051,6 +2094,139 @@ function sim5(){
            conv: !div && L[m-1] < 1e-10 };
 }
 
+
+/* ----- panel-5 landscape charts (function + loss view, preconditioned unstable band) ----- */
+function xRange5(){
+  const [qlo, qhi] = fullRange(R5.xs, 1, 99, 3);
+  let lo = Math.min(qlo, P5.x0), hi = Math.max(qhi, P5.x0);
+  const c = -P5.y;
+  if (c > 0 && Math.abs(P5.b) > 1e-12){
+    const xc = Math.log(c)/P5.b, sp0 = hi - lo || 1;
+    if (xc > lo - 2*sp0 && xc < hi + 2*sp0){ lo = Math.min(lo, xc); hi = Math.max(hi, xc); }
+  }
+  const span = hi - lo || 1;
+  return { lo: lo - 0.12*span, hi: hi + 0.12*span };
+}
+function drawLand5(cv, kind, XR){
+  const { ctx, w, h } = setup(cv);
+  const A = area(w, h);
+  const up = Math.min(Math.round(t5), R5.n);
+  const c = -P5.y;
+  const lo = XR.lo, hi = XR.hi;
+  const V = i => kind === 'f' ? P5.y - R5.r[i] : R5.L[i];   // f = y − r
+  const curveAt = x => {
+    const fv = Math.max(-1e100, Math.min(1e100, fv5(x)));
+    if (kind === 'f') return fv;
+    const d = Math.min(1e75, Math.abs(fv - P5.y)); return d*d;
+  };
+  const N = 400, cxs = [], cys = [];
+  for (let i = 0; i <= N; i++){ const x = lo + (hi-lo)*i/N; cxs.push(x); cys.push(curveAt(x)); }
+  let ylo, yhi;
+  if (kind === 'f'){
+    ylo = P5.y; yhi = P5.y;
+    for (const v of cys){ if (v > -1e100){ if (v < ylo) ylo = v; if (v > yhi) yhi = v; } }
+    for (let i = 0; i <= up; i++){ const v = V(i); if (v > -1e100){ if (v < ylo) ylo = v; if (v > yhi) yhi = v; } }
+    const yp = 0.10*(yhi - ylo || 1); ylo -= yp; yhi += yp;
+  } else {
+    yhi = Math.max(pctl(R5.L, 99.5), c > 0 ? c*c : 0, 1e-12) * 1.25;
+    ylo = -0.05*yhi;
+  }
+  A.x = x => A.l + (x - lo)/(hi - lo)*A.w;
+  A.y = v => A.t + (yhi - v)/(yhi - ylo)*A.h;
+  // unstable band for THIS preconditioner: λmax(PH)(x) > 2/η, found by scanning
+  ctx.fillStyle = alpha(PAL.unst, 0.09);
+  const thr = 2/P5.lr;
+  let runA = null;
+  for (let i = 0; i <= N; i++){
+    const lam = lamP5(cxs[i]);
+    const un = isFinite(lam) && lam > thr && i < N;
+    if (un && runA === null) runA = cxs[i];
+    if (!un && runA !== null){
+      const px1 = clamp(A.x(runA), A.l, A.l+A.w), px2 = clamp(A.x(cxs[i]), A.l, A.l+A.w);
+      ctx.fillRect(px1, A.t, Math.max(px2 - px1, 1), A.h);
+      runA = null;
+    }
+  }
+  axes(ctx, A, ticks(lo,hi,7), ticks(ylo,yhi,5), fmt, fmt);
+  if (kind === 'f'){
+    ctx.strokeStyle = PAL.zero; ctx.setLineDash([5,4]); ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(A.l, A.y(P5.y)); ctx.lineTo(A.l+A.w, A.y(P5.y)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = PAL.ink2; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+    ctx.fillText('y', A.l + 6, A.y(P5.y) - 3);
+  } else if (c > 0 && c*c < yhi){
+    ctx.strokeStyle = PAL.muted; ctx.setLineDash([2,4]); ctx.lineWidth = 1.1;
+    ctx.beginPath(); ctx.moveTo(A.l, A.y(c*c)); ctx.lineTo(A.l+A.w, A.y(c*c)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = PAL.muted; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+    ctx.fillText('y²', A.l + 6, A.y(c*c) - 2);
+  }
+  // curve
+  ctx.strokeStyle = PAL.ink2; ctx.lineWidth = 1.8; ctx.lineJoin = 'round'; ctx.beginPath();
+  for (let i = 0; i <= N; i++){
+    const px = A.x(cxs[i]), py = clamp(A.y(cys[i]), A.t-40, A.t+A.h+40);
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  // crossing marker f(x*) = y
+  if (c > 0 && Math.abs(P5.b) > 1e-12){
+    const xc = Math.log(c)/P5.b;
+    if (xc > lo && xc < hi){
+      ctx.fillStyle = PAL.zero; ctx.beginPath();
+      ctx.arc(A.x(xc), A.y(kind === 'f' ? P5.y : 0), 4, 0, 7); ctx.fill();
+      ctx.strokeStyle = PAL.surface; ctx.lineWidth = 2; ctx.stroke();
+    }
+  }
+  // hop arcs, colored early -> late
+  const st = decim(up, 2000);
+  const arcs = st === 1 && up <= 800;
+  const arrows = up <= 90;
+  for (let i = 0; i + st <= up; i += st){
+    const x1 = A.x(R5.xs[i]), y1 = clamp(A.y(V(i)), A.t-40, A.t+A.h+40);
+    const x2 = A.x(R5.xs[i+st]), y2 = clamp(A.y(V(i+st)), A.t-40, A.t+A.h+40);
+    ctx.strokeStyle = trajCol(R5.n ? i/R5.n : 0);
+    ctx.lineWidth = 1.3;
+    if (arcs){
+      const d = Math.hypot(x2-x1, y2-y1);
+      const lift = Math.min(46, 8 + 0.30*d);
+      const cxm = (x1+x2)/2, cym = (y1+y2)/2 - lift;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.quadraticCurveTo(cxm, cym, x2, y2); ctx.stroke();
+      if (arrows){
+        let vx = x2 - cxm, vy = y2 - cym;
+        const vn = Math.hypot(vx, vy) || 1; vx /= vn; vy /= vn;
+        ctx.beginPath();
+        ctx.moveTo(x2 - 7*vx + 3.5*vy, y2 - 7*vy - 3.5*vx);
+        ctx.lineTo(x2, y2);
+        ctx.lineTo(x2 - 7*vx - 3.5*vy, y2 - 7*vy + 3.5*vx);
+        ctx.stroke();
+      }
+    } else {
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+  // landing dots
+  for (let i = 0; i <= up; i += st){
+    ctx.fillStyle = trajCol(R5.n ? i/R5.n : 0);
+    ctx.beginPath();
+    ctx.arc(A.x(R5.xs[i]), clamp(A.y(V(i)), A.t-40, A.t+A.h+40), 2.3, 0, 7);
+    ctx.fill();
+  }
+  // current point + drop line
+  const base = kind === 'f' ? P5.y : 0;
+  const xC = A.x(R5.xs[up]), yC = clamp(A.y(V(up)), A.t-40, A.t+A.h+40);
+  ctx.strokeStyle = alpha(PAL.ink2, 0.8); ctx.setLineDash([3,3]); ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(xC, yC); ctx.lineTo(xC, A.y(base)); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = PAL.ink2; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText(kind === 'f' ? 'r' : 'L', xC + 5, (yC + A.y(base))/2);
+  ctx.fillStyle = PAL.now; ctx.beginPath(); ctx.arc(xC, yC, 5.5, 0, 7); ctx.fill();
+  ctx.strokeStyle = PAL.surface; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = PAL.muted; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+  ctx.fillText('x', A.l + A.w, A.t + A.h - 4);
+}
+
 /* ---------- panel 6 : tilted valley, preconditioned ---------- */
 const P6 = { opt:'spec', th:90, a:2.5, b:0.05, mu:0.3, y2:2.0, x10:0.15, lr:0.1, T:2000 };
 let R6 = null, t6 = 0, playing6 = false;
@@ -2151,6 +2327,175 @@ function sim6(){
            conv: !div && L[m-1] < 1e-10 };
 }
 
+
+/* ----- panel-6 3-D landscape surfaces (same engine as θ-lab, preconditioned unstable tint) ----- */
+function f6(x1, x2){
+  const { ct, st } = trig6();
+  const s = ct*x1 + st*x2;
+  return P6.a*Math.exp(Math.min(P6.b*s, 60))*x1;
+}
+function L6full(x1, x2){
+  const { ct, st } = trig6();
+  const s = ct*x1 + st*x2;
+  const E = P6.a*Math.exp(Math.min(P6.b*s, 60));
+  const f1v = E*x1, r2v = P6.y2 - P6.mu*s;
+  return Math.min(f1v*f1v + r2v*r2v, 1e300);
+}
+const cam6 = { al: -0.95, ph: 0.50 };
+const cacheF6 = { cv: document.createElement('canvas'), key: '' };
+const cacheL6 = { cv: document.createElement('canvas'), key: '' };
+let surf6 = null;
+function buildSurf6(){
+  const xs = R6.x1, ys = R6.x2;
+  const [q1l, q1h] = fullRange(xs, 2, 98, 3), [q2l, q2h] = fullRange(ys, 2, 98, 3);
+  let l1 = Math.min(q1l, P6.x10, 0), h1 = Math.max(q1h, P6.x10, 0);
+  let l2 = Math.min(q2l, 0), h2 = Math.max(q2h, 0);
+  const s1 = (h1-l1 || 2), s2 = (h2-l2 || 2);
+  l1 -= 0.25*s1; h1 += 0.25*s1; l2 -= 0.25*s2; h2 += 0.25*s2;
+  const w1 = h1-l1, w2 = h2-l2;
+  if (w1 < 0.3*w2){ const cc = 0.5*(l1+h1), half = 0.15*w2; l1 = cc-half; h1 = cc+half; }
+  if (w2 < 0.3*w1){ const cc = 0.5*(l2+h2), half = 0.15*w1; l2 = cc-half; h2 = cc+half; }
+  const F = [], LM = [], UN = [];
+  const thr = 2/P6.lr;
+  for (let i = 0; i <= GN; i++){
+    F.push([]); LM.push([]);
+    const x1 = l1 + (h1-l1)*i/GN;
+    for (let j = 0; j <= GN; j++){
+      const x2 = l2 + (h2-l2)*j/GN;
+      const fv = Math.max(-1e100, Math.min(1e100, f6(x1, x2)));
+      F[i].push(fv); LM[i].push(L6full(x1, x2));
+    }
+  }
+  for (let i = 0; i < GN; i++){
+    UN.push([]);
+    for (let j = 0; j < GN; j++){
+      const x1 = l1 + (h1-l1)*(i+0.5)/GN, x2 = l2 + (h2-l2)*(j+0.5)/GN;
+      const lam = lamP6(x1, x2);
+      UN[i].push(isFinite(lam) && lam > thr);
+    }
+  }
+  // residual = 0 valley is exactly the line w1 = 0
+  const segs = [];
+  if (l1 < 0 && h1 > 0)
+    for (let j = 0; j < GN; j++)
+      segs.push([[0, l2 + (h2-l2)*j/GN], [0, l2 + (h2-l2)*(j+1)/GN]]);
+  surf6 = { l1, h1, l2, h2, F, LM, UN, segs };
+}
+function proj6(u, v, z, s, cx, cyv){
+  const ca = Math.cos(cam6.al), sa = Math.sin(cam6.al);
+  const cp = Math.cos(cam6.ph), sp = Math.sin(cam6.ph);
+  const wv = u*ca + v*sa, tv = -u*sa + v*ca;
+  return [cx + s*tv, cyv - s*(z*cp - wv*sp), wv*cp + z*sp];
+}
+function drawSurf6(cv, kind){
+  const cache = kind === 'f' ? cacheF6 : cacheL6;
+  const logz = kind === 'L' && $('p6logz').checked;
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (w < 10 || h < 10) return;
+  const key = [kind, w, h, dpr, cam6.al.toFixed(3), cam6.ph.toFixed(3), logz, PAL.ink,
+    surf6.l1, surf6.h1, surf6.l2, surf6.h2, P6.th, P6.a, P6.b, P6.mu, P6.y2, P6.lr, P6.opt].join('|');
+  const G = kind === 'f' ? surf6.F : surf6.LM;
+  const zf = logz ? (v => Math.log10(1 + Math.max(0, v))) : (v => v);
+  let zlo = Infinity, zhi = -Infinity;
+  for (let i = 0; i <= GN; i++) for (let j = 0; j <= GN; j++){
+    const z = zf(G[i][j]); if (z < zlo) zlo = z; if (z > zhi) zhi = z;
+  }
+  if (!(zhi > zlo)) zhi = zlo + 1;
+  const ZH = 0.85;
+  const nz = v => (zf(v) - zlo)/(zhi - zlo)*ZH;
+  const NX = x => -1 + 2*(x - surf6.l1)/(surf6.h1 - surf6.l1);
+  const NY = x => -1 + 2*(x - surf6.l2)/(surf6.h2 - surf6.l2);
+  const s = Math.min(w, h)/3.05, cx = w/2, cyv = h*0.56;
+  const P3d = (x1, x2, zv) => proj6(NX(x1), NY(x2), nz(zv), s, cx, cyv);
+  const floorz = logz ? Math.pow(10, zlo) - 1 : zlo;
+
+  if (cache.key !== key){
+    cache.key = key;
+    cache.cv.width = Math.round(w*dpr); cache.cv.height = Math.round(h*dpr);
+    const ctx = cache.cv.getContext('2d');
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,w,h);
+    ctx.strokeStyle = PAL.axis; ctx.lineWidth = 1;
+    const corners = [[surf6.l1,surf6.l2],[surf6.h1,surf6.l2],[surf6.h1,surf6.h2],[surf6.l1,surf6.h2]];
+    ctx.beginPath();
+    corners.forEach((c,i) => { const p = P3d(c[0], c[1], floorz); i===0?ctx.moveTo(p[0],p[1]):ctx.lineTo(p[0],p[1]); });
+    ctx.closePath(); ctx.stroke();
+    const quads = [];
+    for (let i = 0; i < GN; i++) for (let j = 0; j < GN; j++){
+      const x1a = surf6.l1 + (surf6.h1-surf6.l1)*i/GN, x1b = surf6.l1 + (surf6.h1-surf6.l1)*(i+1)/GN;
+      const x2a = surf6.l2 + (surf6.h2-surf6.l2)*j/GN, x2b = surf6.l2 + (surf6.h2-surf6.l2)*(j+1)/GN;
+      const pa = P3d(x1a,x2a,G[i][j]), pb = P3d(x1b,x2a,G[i+1][j]),
+            pc = P3d(x1b,x2b,G[i+1][j+1]), pd = P3d(x1a,x2b,G[i][j+1]);
+      const zn = (nz(G[i][j]) + nz(G[i+1][j]) + nz(G[i+1][j+1]) + nz(G[i][j+1]))/(4*ZH);
+      quads.push({ pa, pb, pc, pd, zn, un: surf6.UN[i][j],
+        depth: (pa[2]+pb[2]+pc[2]+pd[2])/4 });
+    }
+    quads.sort((q1,q2) => q1.depth - q2.depth);
+    for (const q of quads){
+      ctx.beginPath();
+      ctx.moveTo(q.pa[0], q.pa[1]); ctx.lineTo(q.pb[0], q.pb[1]);
+      ctx.lineTo(q.pc[0], q.pc[1]); ctx.lineTo(q.pd[0], q.pd[1]); ctx.closePath();
+      ctx.fillStyle = mix(PAL.surflo, PAL.surfhi, clamp(q.zn, 0, 1));
+      ctx.fill();
+      if (q.un){ ctx.fillStyle = alpha(PAL.unst, 0.13); ctx.fill(); }
+      ctx.strokeStyle = alpha(PAL.muted, 0.18); ctx.lineWidth = 0.5; ctx.stroke();
+    }
+    ctx.strokeStyle = PAL.zero; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    for (const sg of surf6.segs){
+      const p1 = P3d(sg[0][0], sg[0][1], 0), p2 = P3d(sg[1][0], sg[1][1], 0);
+      ctx.beginPath(); ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]); ctx.stroke();
+    }
+    // full-fit point (r1 = r2 = 0): z = 0 on both surfaces
+    if (P6.th > 0.5 && Math.abs(P6.mu) > 1e-12){
+      const wfit = (P6.y2/P6.mu)/Math.sin(P6.th*Math.PI/180);
+      if (isFinite(wfit) && wfit > surf6.l2 && wfit < surf6.h2 && surf6.l1 < 0 && surf6.h1 > 0){
+        const pf = P3d(0, wfit, 0);
+        ctx.fillStyle = PAL.nt[2]; ctx.beginPath(); ctx.arc(pf[0], pf[1], 5, 0, 7); ctx.fill();
+        ctx.strokeStyle = PAL.surface; ctx.lineWidth = 2; ctx.stroke();
+      }
+    }
+    ctx.fillStyle = PAL.muted; ctx.font = '11px ui-monospace,Menlo,Consolas,monospace';
+    ctx.textAlign = 'center';
+    const m1 = P3d(surf6.h1, surf6.l2, floorz), m2 = P3d(surf6.l1, surf6.h2, floorz);
+    ctx.fillText('w₁', m1[0] + 14, m1[1] + 14);
+    ctx.fillText('w₂', m2[0] - 14, m2[1] + 14);
+    ctx.textAlign = 'left';
+    ctx.fillText(`w₁∈[${fmt(surf6.l1)}, ${fmt(surf6.h1)}]  w₂∈[${fmt(surf6.l2)}, ${fmt(surf6.h2)}]`, 8, h - 8);
+    ctx.textAlign = 'right';
+    ctx.fillText((kind === 'f' ? 'f₁' : (logz ? 'log₁₀(1+L)' : 'L')) + `∈[${fmt(zlo)}, ${fmt(zhi)}]`, w - 8, h - 8);
+  }
+  const { ctx } = setup(cv);
+  ctx.drawImage(cache.cv, 0, 0, w, h);
+  const up = Math.min(Math.round(t6), R6.n);
+  const st = decim(up, 2500);
+  const zof = i => kind === 'f' ? f6(R6.x1[i], R6.x2[i]) : R6.L[i];
+  const inD = i => R6.x1[i] >= surf6.l1 && R6.x1[i] <= surf6.h1 && R6.x2[i] >= surf6.l2 && R6.x2[i] <= surf6.h2;
+  const zcl = v => clamp(zf(v), zlo, zhi);
+  ctx.lineWidth = 1.5; ctx.lineCap = 'round';
+  let prev = null;
+  for (let i = 0; i <= up; i += st){
+    if (!inD(i)){ prev = null; continue; }
+    const p = proj6(NX(R6.x1[i]), NY(R6.x2[i]), (zcl(zof(i)) - zlo)/(zhi - zlo)*ZH, s, cx, cyv);
+    if (prev){
+      ctx.strokeStyle = alpha(PAL.traj1, 0.35);
+      ctx.beginPath(); ctx.moveTo(prev[0], prev[1]); ctx.lineTo(p[0], p[1]); ctx.stroke();
+    }
+    prev = p;
+  }
+  for (let i = 0; i <= up; i += st){
+    if (!inD(i)) continue;
+    const p = proj6(NX(R6.x1[i]), NY(R6.x2[i]), (zcl(zof(i)) - zlo)/(zhi - zlo)*ZH, s, cx, cyv);
+    ctx.fillStyle = trajCol(R6.n ? i/R6.n : 0);
+    ctx.beginPath(); ctx.arc(p[0], p[1], 2.4, 0, 7); ctx.fill();
+  }
+  if (inD(up)){
+    const p = proj6(NX(R6.x1[up]), NY(R6.x2[up]), (zcl(zof(up)) - zlo)/(zhi - zlo)*ZH, s, cx, cyv);
+    ctx.fillStyle = PAL.now; ctx.beginPath(); ctx.arc(p[0], p[1], 5.5, 0, 7); ctx.fill();
+    ctx.strokeStyle = PAL.surface; ctx.lineWidth = 2; ctx.stroke();
+  }
+}
+
 /* ---------- panels 5/6 drawing + wiring ---------- */
 function drawAdaptive(px, RR, t, lr){
   drawLogStrip($(px + 's1'), RR, t, RR.L, 0, PAL.accent);
@@ -2174,6 +2519,9 @@ function statusAdaptive(RR, t, lr){
 function drawAll5(){
   if (!R5) return;
   readPal();
+  const XR5 = xRange5();
+  drawLand5($('c5f'), 'f', XR5);
+  drawLand5($('c5L'), 'L', XR5);
   drawAdaptive('c5', R5, t5, P5.lr);
   const st5 = statusAdaptive(R5, t5, P5.lr);
   $('p5read').innerHTML =
@@ -2191,6 +2539,7 @@ function drawAll5(){
 function drawAll6(){
   if (!R6) return;
   readPal();
+  if (surf6){ drawSurf6($('c6f'), 'f'); drawSurf6($('c6L'), 'L'); }
   drawAdaptive('c6', R6, t6, P6.lr);
   const st6 = statusAdaptive(R6, t6, P6.lr);
   $('p6read').innerHTML =
@@ -2213,6 +2562,7 @@ function recompute5(keepT){
 }
 function recompute6(keepT){
   R6 = sim6();
+  buildSurf6();
   $('p6scrub').max = R6.n;
   t6 = keepT ? Math.min(t6, R6.n) : R6.n;
   $('p6scrub').value = t6;
@@ -2330,8 +2680,11 @@ $('p6csv').addEventListener('click', () => {
   a.href = URL.createObjectURL(blob); a.download = 'eos_adaptive_valley.csv'; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 });
+$('p6logz').addEventListener('change', () => { cacheL6.key = ''; drawAll6(); });
+bindRotate($('c6f'), cam6, drawAll6, () => true);
+bindRotate($('c6L'), cam6, drawAll6, () => true);
 
-/* ---------- tabs ---------- *//* ---------- tabs ---------- */
+/* ---------- tabs ---------- */
 function switchTab(nb){
   $('panel1').hidden = nb !== 1;
   $('panel3').hidden = nb !== 3;
@@ -2399,7 +2752,7 @@ function redrawVisible(){
   if (!$('panel5').hidden) drawAll5();
   if (!$('panel6').hidden) drawAll6();
 }
-function clearSurfCaches(){ cacheF3.key = ''; cacheL3.key = ''; }
+function clearSurfCaches(){ cacheF3.key = ''; cacheL3.key = ''; cacheF6.key = ''; cacheL6.key = ''; }
 const ro = new ResizeObserver(() => { clearSurfCaches(); redrawVisible(); });
 document.querySelectorAll('canvas.plot').forEach(c => ro.observe(c));
 new MutationObserver(() => { clearSurfCaches(); readPal(); redrawVisible(); })
